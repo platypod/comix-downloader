@@ -1,0 +1,57 @@
+name: Build and push multi-arch image
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract tag
+        id: tag
+        run: |
+          version="${GITHUB_REF_NAME}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Only move :latest for a clean release (no "-" prerelease suffix,
+          # e.g. a "-dev" tag) -- otherwise a prerelease build pushed to feed
+          # local's prerelease-admitting ImagePolicy would overwrite :latest
+          # for anything pulling it directly.
+          {
+            echo "tags<<EOF"
+            echo "ghcr.io/platypod/comix-downloader:$version"
+            if [[ "$version" != *-* ]]; then
+              echo "ghcr.io/platypod/comix-downloader:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tag.outputs.tags }}
